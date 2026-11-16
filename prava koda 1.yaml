@@ -1,0 +1,47 @@
+name: Build Magic Lantern EOSM.202
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: 1. Checkout your forked repository
+        uses: actions/checkout@v4
+
+      - name: 2. Sync latest Autofocus (AF) updates
+        continue-on-error: true
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git remote add af-upstream https://github.com/mgojkovic/crop-mood-eosm-slim-gui-af.git
+          git fetch af-upstream
+          git merge af-upstream/main --no-edit || git merge --abort
+
+      - name: 3. Install ARM compiler & build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi python3 make zip
+
+      - name: 4. Generate required module_strings.h headers
+        run: |
+          for d in modules/*/; do
+            [ -f "$d/module_strings.h" ] || printf '' > "$d/module_strings.h"
+          done
+
+      - name: 5. Inject 1.37:1 Academy (1584x1156) preset safely
+        run: |
+          python3 scripts/add_academy_preset.py
+
+      - name: 6. Compile EOSM.202 autoexec.bin and modules
+        run: |
+          make -C platform/EOSM.202 zip SHELL=/bin/bash PYTHON=python3
+
+      - name: 7. Package firmware zip for download
+        uses: actions/upload-artifact@v4
+        with:
+          name: magiclantern-EOSM.202
+          path: platform/EOSM.202/*.zip
